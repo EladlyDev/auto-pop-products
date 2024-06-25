@@ -1,73 +1,65 @@
 #!/usr/bin/env python3
-from bs4 import BeautifulSoup
-import time
+import cmd
+from product_scraper import ProductScraper
 driver = __import__('driver').driver
 
 
-def get_prod_links(link, driver):
-    # Navigate to the page
-    driver.get(link)
+class ProductScraperShell(cmd.Cmd):
+    intro = 'Welcome to the Product Scraper shell. Type help or ? to list commands.\n'
+    prompt = 'product_scraper> '
+    scraper = ProductScraper(driver)
 
-    # Wait for the page to load
-    time.sleep(5)
+    def do_add_links(self, arg):
+        'Add links to scrape: add_links <link1> <link2> ...'
+        if (not arg):
+            print('USAGE: add_links <link1> <link2> ...')
+            return
+        links = arg.split()[1:]
+        self.scraper.add_links(links)
+        print(f'Links: {links} added')
 
-    page_source = driver.page_source
+    def do_scrape(self, arg):
+        'Scrape product information: scrape'
+        if (not self.scraper.prods_group):
+            print("Please use add_links to add links first.")
+            return
+        print('Scraping... this might take a while...')
+        self.scraper.get_prod_links()
+        print('Got the links for each product... almost done...')
+        self.scraper.get_prod_info()
+        print('Product information scraped')
 
-    # Parse the page source with BeautifulSoup
-    soup = BeautifulSoup(page_source, 'html5lib')
-    products = soup.findAll('div', attrs={'class':'s-product-card-image'})
+    def do_export(self, arg):
+        'Export product information to a file: export'
+        try:
+            self.scraper.export_to_excel()
+        except Exception as e:
+            print(e)
+            return
+        print(f'Product information exported.')
 
-    prodlinks = []
-    for product in products:
-        prodlinks.append(product.a['href'])
+    def do_clear(self, arg):
+        'Clear the product links: clear'
+        self.scraper.prods_group = []
+        print('Product links cleared.')
 
-    return prodlinks
+    def do_exit(self, arg):
+        'Exit the shell: exit'
+        print('\nBye')
+        driver.quit()
+        return True
 
+    def do_quit(self, arg):
+        'Quit the shell: quit'
+        return self.do_exit(arg)
 
-
-def get_description(description_div):
-    description_content = []
-
-    # Extract text content
-    for p in description_div.findAll('p'):
-        text = p.text
-        if text:
-            description_content.append(text)
-
-    # Extract image URLs
-    for img in description_div.findAll('img'):
-        description_content.append(img['src'])
-
-    return ' '.join(description_content)
+    def do_EOF(self, arg):
+        'Exit the shell: EOF'
+        print('\nBye')
+        driver.quit()
+        return True
 
 
-def get_prod_info(prodlinks, driver):
-    products = []
-    for i, p in enumerate(prodlinks):
-        pid = p.split('/')[-1].lstrip('p')
-        driver.get(p)
-        time.sleep(5)
-        ps = driver.page_source
-        psoup = BeautifulSoup(ps, 'html5lib')
-        products.append({})
-        p = products[i]
-        p['name'] = psoup.find('h1').text.strip()
-        p['price'] = psoup.find('h2', attrs={'class':'total-price font-bold text-xl inline-block'}).text
-        p['price'] = p['price'].strip().split(' ')[0]
-
-        # Extract all picture links
-        image_div = psoup.findAll('a', attrs={'data-fslightbox':"product_" + pid})
-        image_urls = [img['href'] for img in image_div]
-        p['images'] = ','.join(image_urls)
-
-        # Extract classifications
-        breadcrumb_div = psoup.find('salla-breadcrumb')
-        classifications = ' > '.join([item.text.strip() for item in breadcrumb_div.findAll('li', attrs={'class': 's-breadcrumb-item'})])
-        p['classifications'] = classifications
-
-        # Extract description
-        description_div = psoup.find('div', attrs={'class': 'product__description'})
-        desc = get_description(description_div)
-        p['description'] =  desc if desc else 'لا يوجد وصف'
-
-    return products
+if __name__ == '__main__':
+    app = ProductScraperShell()
+    app.cmdloop()
